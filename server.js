@@ -1,66 +1,72 @@
 'use strict';
 
+require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
-const mongoose = require('mongoose');
-const expect = require('chai').expect;
 const cors = require('cors');
-require('dotenv').config();
+const mongoose = require('mongoose');
+const runner = require('./test-runner');
 
 const apiRoutes = require('./routes/api.js');
 const fccTestingRoutes = require('./routes/fcctesting.js');
-const runner = require('./test-runner');
 
-let app = express();
+const app = express();
 
+// Middleware
 app.use('/public', express.static(process.cwd() + '/public'));
-
-app.use(cors({ origin: '*' })); //For FCC testing purposes only
-
-
-
+app.use(cors({ origin: '*' })); // For FCC testing only
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-//Sample front-end
-app.route('/:project/')
-  .get(function (req, res) {
-    res.sendFile(process.cwd() + '/views/issue.html');
-  });
+// Sample front-end
+app.route('/:project/').get((req, res) => {
+  res.sendFile(process.cwd() + '/views/issue.html');
+});
 
-//Index page (static HTML)
-app.route('/')
-  .get(function (req, res) {
-    res.sendFile(process.cwd() + '/views/index.html');
-  });
+// Index page (static HTML)
+app.route('/').get((req, res) => {
+  res.sendFile(process.cwd() + '/views/index.html');
+});
 
-//For FCC testing purposes
+// FCC testing routes
 fccTestingRoutes(app);
 
-//Routing for API 
+// API routes
 apiRoutes(app);
 
-//404 Not Found Middleware
-app.use(function (req, res, next) {
-  res.status(404)
-    .type('text')
-    .send('Not Found');
+// 404 Middleware
+app.use((req, res, next) => {
+  res.status(404).type('text').send('Not Found');
 });
 
-//Start our server and tests!
-const listener = app.listen(process.env.PORT || 3000, function () {
-  console.log('Your app is listening on port ' + listener.address().port);
-  if (process.env.NODE_ENV === 'test') {
-    console.log('Running Tests...');
-    setTimeout(function () {
-      try {
-        runner.run();
-      } catch (e) {
-        console.log('Tests are not valid:');
-        console.error(e);
+// Connect to MongoDB
+const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/fcc-issuetracker';
+
+mongoose
+  .connect(mongoUri)
+  .then(() => {
+    console.log('Connected to MongoDB');
+
+    // Start server
+    const listener = app.listen(process.env.PORT || 3000, () => {
+      console.log('Your app is listening on port ' + listener.address().port);
+
+      // Run tests only in test environment
+      if (process.env.NODE_ENV === 'test') {
+        console.log('Running Tests...');
+        setTimeout(() => {
+          try {
+            runner.run();
+          } catch (err) {
+            console.log('Tests are not valid:');
+            console.error(err);
+          }
+        }, 3500);
       }
-    }, 3500);
-  }
-});
+    });
+  })
+  .catch((err) => {
+    console.error('MongoDB connection error:', err);
+  });
 
-module.exports = app; //for testing
+module.exports = app; // For testing

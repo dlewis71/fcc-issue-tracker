@@ -1,89 +1,116 @@
 'use strict';
 
-const express = require('express');
-const router = express.Router();
-const { ObjectId } = require('mongodb'); // If using MongoDB
-const Issue = require('../models/issue'); // Your Mongoose model
-
+const Issue = require('../models/issue');
 
 module.exports = function (app) {
 
   app.route('/api/issues/:project')
 
-  router.get('/api/issues/:project', async (req, res) => {
-    const project = req.params.project;
-    const filter = { project, ...req.query }; // Accept query params as filters
+    // GET
+    .get(async (req, res) => {
+      const project = req.params.project;
+      const filters = { project, ...req.query };
 
-    try {
-      const issues = await Issue.find(filter).exec();
-      res.json(issues);
-    } catch (err) {
-      res.json({ error: 'could not fetch issues' });
-    }
-  });
+      try {
+        const issues = await Issue.find(filters);
+        res.json(issues);
+      } catch (err) {
+        res.status(500).json({ error: 'server error' });
+      }
+    })
 
+    // POST
+    .post(async (req, res) => {
+      const project = req.params.project;
+      const {
+        issue_title,
+        issue_text,
+        created_by,
+        assigned_to = '',
+        status_text = ''
+      } = req.body;
 
-  router.post('/api/issues/:project', async (req, res) => {
-    const project = req.params.project;
-    const { issue_title, issue_text, created_by, assigned_to = '', status_text = '' } = req.body;
+      if (!issue_title || !issue_text || !created_by) {
+        return res.json({ error: 'required field(s) missing' });
+      }
 
-    if (!issue_title || !issue_text || !created_by) {
-      return res.json({ error: 'required field(s) missing' });
-    }
+      const now = new Date();
 
-    const now = new Date();
-    const issue = new Issue({
-      project,
-      issue_title,
-      issue_text,
-      created_by,
-      assigned_to,
-      status_text,
-      created_on: now,
-      updated_on: now,
-      open: true
+      try {
+        const issue = new Issue({
+          project,
+          issue_title,
+          issue_text,
+          created_by,
+          assigned_to,
+          status_text,
+          open: true,
+          created_on: now,
+          updated_on: now
+        });
+
+        const saved = await issue.save();
+        res.json(saved);
+      } catch (err) {
+        res.status(500).json({ error: 'server error' });
+      }
+    })
+
+    // PUT
+    .put(async (req, res) => {
+      const project = req.params.project;
+      const { _id, ...updates } = req.body;
+
+      if (!_id) {
+        return res.json({ error: 'missing _id' });
+      }
+
+      const fieldsToUpdate = Object.keys(updates).filter(
+        key => updates[key] !== '' && updates[key] !== undefined
+      );
+
+      if (fieldsToUpdate.length === 0) {
+        return res.json({ error: 'no update field(s) sent', _id });
+      }
+
+      updates.updated_on = new Date();
+
+      try {
+        const updated = await Issue.findOneAndUpdate(
+          { _id, project },
+          updates,
+          { new: true }
+        );
+
+        if (!updated) {
+          return res.json({ error: 'could not update', _id });
+        }
+
+        res.json({ result: 'successfully updated', _id });
+      } catch (err) {
+        res.json({ error: 'could not update', _id });
+      }
+    })
+
+    // DELETE
+    .delete(async (req, res) => {
+      const { _id } = req.body;
+
+      if (!_id) {
+        return res.json({ error: 'missing _id' });
+      }
+
+      try {
+        const deleted = await Issue.findByIdAndDelete(_id);
+
+        if (!deleted) {
+          return res.json({ error: 'could not delete', _id });
+        }
+
+        res.json({ result: 'successfully deleted', _id });
+      } catch (err) {
+        res.json({ error: 'could not delete', _id });
+      }
     });
-
-    try {
-      const savedIssue = await issue.save();
-      res.json(savedIssue);
-    } catch (err) {
-      res.json({ error: 'could not create issue' });
-    }
-  });
-
-
-  router.put('/api/issues/:project', async (req, res) => {
-    const { _id, ...fields } = req.body;
-
-    if (!_id) return res.json({ error: 'missing _id' });
-    if (Object.keys(fields).length === 0) return res.json({ error: 'no update field(s) sent', _id });
-
-    fields.updated_on = new Date(); // Update timestamp
-
-    try {
-      const updated = await Issue.findByIdAndUpdate(_id, fields, { new: true }).exec();
-      if (!updated) return res.json({ error: 'could not update', _id });
-      res.json({ result: 'successfully updated', _id });
-    } catch (err) {
-      res.json({ error: 'could not update', _id });
-    }
-  });
-
-
-  router.delete('/api/issues/:project', async (req, res) => {
-    const { _id } = req.body;
-
-    if (!_id) return res.json({ error: 'missing _id' });
-
-    try {
-      const deleted = await Issue.findByIdAndDelete(_id).exec();
-      if (!deleted) return res.json({ error: 'could not delete', _id });
-      res.json({ result: 'successfully deleted', _id });
-    } catch (err) {
-      res.json({ error: 'could not delete', _id });
-    }
-  });
-
-
 };
+
